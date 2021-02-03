@@ -1,0 +1,311 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexagon Maze Generator</title>
+
+    <style>
+        * {
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+        }
+
+        main {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+
+            height: 100vh;
+        }
+
+        polyline {
+            fill: none;
+            stroke: black;
+            stroke-width: 3px;
+        }
+
+        line {
+            stroke-width: 3px;
+        }
+
+        #debugger {
+            position: absolute;
+            top: 0;
+            width: 100px;
+            height: 100px;
+            background: rgba(240, 128, 128, 0.52);
+
+            text-align: center;
+            font-size: 0.5rem;
+            font-family: sans-serif;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    
+    <main id="hexagonGridContainer"></main>
+
+    <!-- <script src="./script.js"></script> -->
+    <script>
+        ( () => {
+
+            const WALLS = {
+                "right": 0,
+                "right_bottom": 1,
+                "left_bottom": 2,
+                "left": 3,
+                "left_top": 4,
+                "right_top": 5
+            }
+
+            const grid = {};
+                    
+            const generateHexagonTileGrid = () => {
+
+                const degToRad = deg => ( deg * Math.PI / 180);
+
+                grid.containerElement = document.getElementById('hexagonGridContainer');
+                grid.svgElement = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                grid.oneLineCellCount = 50;
+                grid.firstPointAng = 30;
+                grid.cellRadius = 10;
+                grid.cellXOffset = 4; // Correction due to stroke
+                grid.cellYOffset = grid.cellRadius * 1.5 + 5; // Correction due to stroke
+                grid.hexagonVertexCount = 6;
+                grid.firstPointX = grid.cellXOffset + Math.cos( degToRad( grid.firstPointAng ) ) * grid.cellRadius;
+                grid.firstPointY = grid.cellYOffset + Math.sin( degToRad( grid.firstPointAng ) ) * grid.cellRadius;
+                grid.widthHeightRatio = 0.92; // Rough correction due to hexagon geometry
+                grid.cells = [];
+                grid.wallsToClear = [];
+
+                for ( let y = 0; y < grid.oneLineCellCount; y++ ) {
+
+
+                    for ( let x = 0; x < grid.oneLineCellCount; x++ ) {
+
+
+                        const cell = {
+
+                            x,
+                            y,
+                            vertices: {},
+                            polylines: [],
+                            lines: [],
+                            status: 'not visited',
+                            neighbors: {}
+
+                        };
+
+                        // First point declaration. Top point of right vertex
+                        // 0.26 = 13.3/50 for aligning x coordinates
+                        const xCorrectionRatio = 13.3/50; // Seems to work the best
+                        const x0 = grid.firstPointX + Math.cos( degToRad(grid.firstPointAng) ) * grid.cellRadius + x*(grid.cellRadius*2-grid.cellRadius*xCorrectionRatio) + (y%2 === 0 ? (grid.cellRadius*2-grid.cellRadius*xCorrectionRatio)/2 : 0);
+                        const y0 = grid.firstPointY - Math.sin( degToRad(grid.firstPointAng) ) * grid.cellRadius + y*(grid.cellRadius+grid.cellRadius/2);
+                        cell.vertices.right = [ x0, y0 ];
+
+                        
+                        for ( let i = 1; i < grid.hexagonVertexCount; i++ ) {
+
+                            const nextPointDeg  = grid.firstPointAng - (grid.firstPointAng*2) * i,
+                                xi    = grid.firstPointX + Math.cos( degToRad(nextPointDeg) ) * grid.cellRadius + x*(grid.cellRadius*2-grid.cellRadius*xCorrectionRatio) + (y%2 === 0 ? (grid.cellRadius*2-grid.cellRadius*xCorrectionRatio)/2 : 0),
+                                yi    = grid.firstPointY - Math.sin( degToRad(nextPointDeg) ) * grid.cellRadius + y*(grid.cellRadius+grid.cellRadius/2),
+                                key   = Object.keys(WALLS)[i];
+                                cell.vertices[key] = [xi, yi];
+
+
+                        }
+
+                        grid.cells.push( cell );
+
+                    }
+
+
+
+                }
+
+                generateNeighbors();
+                generateHexagonalTileMaze();
+                grid.containerElement.append( grid.svgElement );
+            }
+
+            const generateNeighbors = () => {
+
+
+                grid.cells.forEach( cell => {
+
+                    const cellId = cell.x + cell.y * grid.oneLineCellCount;
+
+                    if ( cell.x !== grid.oneLineCellCount - 1 ) {
+                        cell.neighbors.right = [cellId + 1, 'not visited'];
+                    }
+
+                    if ( cell.x !== 0 ) {
+                        cell.neighbors.left = [cellId - 1, 'not visited'];
+                    }
+                    
+                    // When dealing with diagonals take into account row shift
+                    if ( cell.y !== grid.oneLineCellCount - 1 ) {
+                        if ( cell.x !== grid.oneLineCellCount - 1 ) {
+                            cell.neighbors.right_bottom = [cellId + grid.oneLineCellCount + (cell.y % 2 === 0 ? 1 : 0), 'not visited'];
+                        }
+                        
+                        if (cell.x === grid.oneLineCellCount - 1 && cell.y % 2 !== 0 ) {
+                            cell.neighbors.right_bottom = [cellId + grid.oneLineCellCount, 'not visited'];
+                        }
+                    }
+
+                    if ( cell.y !== grid.oneLineCellCount - 1) {
+                        if (cell.x !== 0) {
+                            cell.neighbors.left_bottom = [cellId + grid.oneLineCellCount - (cell.y % 2 === 0 ? 0 : 1), 'not visited'];
+                        }else if(cell.x === 0 && cell.y % 2 === 0) {
+                            cell.neighbors.left_bottom = [cellId + grid.oneLineCellCount, 'not visited'];
+                        }
+                    }
+
+                    if ( cell.y !== 0 ) {
+                        if (cell.x !== 0 ) {
+                            cell.neighbors.left_top = [cellId - grid.oneLineCellCount - (cell.y % 2 === 0 ? 0 : 1), 'not visited'];
+                        }
+                        if (cell.x === 0 && cell.y % 2 === 0) {
+                            cell.neighbors.left_top = [cellId - grid.oneLineCellCount, 'not visited'];
+                        }
+                    }
+
+                    if ( cell.y !== 0 ) {
+
+                        if ( cell.x !== grid.oneLineCellCount - 1) {
+                            cell.neighbors.right_top = [cellId - grid.oneLineCellCount + (cell.y % 2 === 0 ? 1 : 0), 'not visited'];
+                        }
+                        if( cell.x === grid.oneLineCellCount - 1 && cell.y % 2 !== 0 ) {
+                            cell.neighbors.right_top = [cellId - grid.oneLineCellCount, 'not visited'];
+                        }
+
+                    }
+
+
+                });
+
+            }
+
+            const drawGrid = () => {
+
+                // Remove&Add SVG
+                grid.svgElement.remove();
+                grid.svgElement = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                grid.svgElement.setAttribute('width', 1000);
+                grid.svgElement.setAttribute('height', 1000);
+
+                // Draw polylines
+                grid.cells.forEach( cell => {
+
+                    const vertexCount = cell.vertices.length;
+                    cell.lines = [];
+                    const vertexKeys = Object.keys(cell.vertices);
+                    vertexKeys.forEach( (vertexKey, key) => {
+
+                            const vertex = cell.vertices[vertexKey];
+                            let x1, y1, x2, y2;
+                            if ( vertex !== null && vertex[2] !== 'invisible') {
+                                
+                                x1 = vertex[0];
+                                y1 = vertex[1];
+                                if (cell.vertices[vertexKeys[key + 1]]) {
+                                    x2 = cell.vertices[vertexKeys[key + 1]][0];
+                                    y2 = cell.vertices[vertexKeys[key + 1]][1];
+                                }else{
+                                    x2 = cell.vertices[vertexKeys[0]][0];
+                                    y2 = cell.vertices[vertexKeys[0]][1];
+                                }
+                                
+                                if (x1 && y1 && x2 && y2) {
+
+                                    const vertexElement = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                                    vertexElement.setAttribute('x1', x1);
+                                    vertexElement.setAttribute('y1', y1);
+                                    vertexElement.setAttribute('x2', x2);
+                                    vertexElement.setAttribute('y2', y2);
+                                    vertexElement.setAttribute('stroke', 'black');
+                                    
+                                    cell.lines.push(vertexElement);
+                                    grid.svgElement.append(vertexElement);
+                                }
+                            }
+
+                    });
+
+                });
+                
+
+            }
+
+            const generateHexagonalTileMaze = () => {
+                
+                const deleteWalls = (cell1, wall, cell2) => {
+
+                    let oppositeWall;
+                    if (wall === 'right') oppositeWall = "left";
+                    if (wall === 'right_bottom') oppositeWall = "left_top";
+                    if (wall === 'left_bottom') oppositeWall = "right_top";
+                    if (wall === 'left') oppositeWall = "right";
+                    if (wall === 'left_top') oppositeWall = "right_bottom";
+                    if (wall === 'right_top') oppositeWall = "left_bottom";
+
+                    cell1.vertices[wall].push('invisible');
+                    cell2.vertices[oppositeWall].push('invisible');
+                }
+
+                const stack = [];
+                const startCell = grid.cells[ grid.cells.length - 1 ]; // Let's choose last tile as starting point
+                
+                startCell.status = 'visited';
+                stack.push( startCell );
+                const iterator = () => {
+                    const currentCell = stack.pop();
+                    const neighborKeys = Object.keys( currentCell.neighbors );
+                    const notVisitedNeighbors = {};
+
+                    neighborKeys.forEach( key => {
+                        const neighborCell = grid.cells[currentCell.neighbors[key][0]];
+                        if (neighborCell) {
+                            if ( neighborCell.status === "not visited" ) {
+
+                                notVisitedNeighbors[key] = neighborCell;
+
+                            }
+                        }
+                    });
+
+                    const notVisitedNeighborsKeys = Object.keys(notVisitedNeighbors);
+                    if ( notVisitedNeighborsKeys.length ) {
+                        stack.push( currentCell );
+
+                        const randomKey = Math.floor( Math.random() * (notVisitedNeighborsKeys.length) );
+                        deleteWalls( currentCell, notVisitedNeighborsKeys[randomKey], notVisitedNeighbors[notVisitedNeighborsKeys[randomKey]]); 
+                        notVisitedNeighbors[notVisitedNeighborsKeys[randomKey]].status = 'visited';
+                        stack.push(notVisitedNeighbors[notVisitedNeighborsKeys[randomKey]]);
+                    }
+
+                    if ( stack.length ) {                 
+                        iterator();
+                    };
+                };
+
+                iterator();
+                drawGrid();
+
+                console.log(grid);
+            }
+
+            document.addEventListener('DOMContentLoaded', () => {
+                generateHexagonTileGrid();
+            });
+
+            })()
+    </script>
+</body>
+</html>
